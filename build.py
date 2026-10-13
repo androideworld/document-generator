@@ -17,6 +17,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+# --- Принудительный UTF-8 для stdout/stderr (Windows + CI) ---
+# На Windows консоль по умолчанию использует CP1252, из-за чего print()
+# с русскими буквами падает с UnicodeEncodeError. Переводим на UTF-8.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 APP_NAME = "ГенераторДокументов"
 ENTRY_POINT = "main.py"
