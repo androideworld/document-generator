@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Сборка PyInstaller
+build/
+dist/
+*.spec
+
+# Вывод генератора и тестовые данные
+out/
+out_gui/
+out_gui2/
+generation_log.txt
+*.pdf
+*.docx
+*.doc
+*.rtf
+*.odt
+*.xps
+
+# Только логи генератора, не все .txt
+generation_log*.txt
+!requirements.txt
+!requirements-dev.txt
+
+# Не коммитить примеры данных
+clients.xlsx
+template_test.docx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+clients.xlsx
+template_test.docx
