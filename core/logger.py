@@ -8,7 +8,11 @@ from pathlib import Path
 LOG_FILENAME = "generation_log.txt"
 
 
-def setup_logger(folder: str, level: int = logging.INFO) -> logging.Logger:
+def setup_logger(
+    folder: str,
+    level: int = logging.INFO,
+    filename: str = LOG_FILENAME,
+) -> logging.Logger:
     """
     Настраивает логгер с записью в <folder>/generation_log.txt.
     Файл ПЕРЕЗАПИСЫВАЕТСЯ при каждом вызове (mode='w').
@@ -20,7 +24,7 @@ def setup_logger(folder: str, level: int = logging.INFO) -> logging.Logger:
     folder_path = Path(folder)
     folder_path.mkdir(parents=True, exist_ok=True)
 
-    log_path = folder_path / LOG_FILENAME
+    log_path = folder_path / filename
 
     # Уникальное имя логгера, чтобы не смешивать с другими вызовами
     logger = logging.getLogger(f"generator.{id(log_path)}")

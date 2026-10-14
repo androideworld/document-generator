@@ -73,6 +73,36 @@ def update(**kwargs) -> None:
     cfg.update(kwargs)
     save_config(cfg)
 
+# ---------------------------------------------------------------------------
+# Шаблоны путей для генерации
+# ---------------------------------------------------------------------------
+
+DEFAULT_FOLDER_PATTERN = "{year}/{month}"
+DEFAULT_CLIENT_PATTERN = "{short_fio}_{date}_{contract}"
+
+
+def get_folder_pattern() -> str:
+    """Шаблон верхних папок.
+
+    По умолчанию: {year}/{month}
+    Пример: 2024/01
+
+    Доступные подстановки:
+        {year}, {month}, {first_letter}
+    """
+    return get("folder_pattern", DEFAULT_FOLDER_PATTERN)
+
+
+def get_client_pattern() -> str:
+    """Шаблон папки клиента.
+
+    По умолчанию: {short_fio}_{date}_{contract}
+    Пример: Иванов И.И._01.01.2024_101
+
+    Доступные подстановки:
+        {short_fio}, {fio}, {date}, {contract}, {id}, {phone}
+    """
+    return get("client_pattern", DEFAULT_CLIENT_PATTERN)
 
 if __name__ == "__main__":
     print("Платформа:", sys.platform)

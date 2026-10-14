@@ -1,5 +1,6 @@
 """Чтение клиентов из clients.xlsx через openpyxl."""
 
+import re
 from dataclasses import dataclass, asdict
 from datetime import datetime, date
 from typing import List
@@ -129,6 +130,28 @@ def filter_clients(
         result.append(c)
 
     return result
+
+
+def short_fio(fio: str) -> str:
+    """Иванов Иван Иванович → Иванов И.И."""
+    parts = fio.strip().split()
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    surname = parts[0]
+    initials = ".".join(p[0].upper() for p in parts[1:] if p) + "."
+    return f"{surname} {initials}"
+
+
+def sanitize_folder_name(name: str) -> str:
+    """Убирает недопустимые символы из имени папки/файла."""
+    cleaned = re.sub(r'[<>:"/\\|?*]', "_", name)
+    cleaned = cleaned.rstrip(". ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or "client"
+
+
 if __name__ == "__main__":
     import sys
 

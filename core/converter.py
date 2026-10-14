@@ -102,6 +102,9 @@ def convert_with_libreoffice(
         # На Windows URI профиля должен быть file:///C:/...
         # (прямые слэши, три после file:). Иначе LibreOffice падает.
         profile_uri = Path(profile_dir).as_uri()
+        # На Windows URI профиля должен быть file:///C:/...
+        # (прямые слэши, три после file:). Иначе LibreOffice падает.
+        profile_uri = Path(profile_dir).as_uri()
         args.insert(2, f"-env:UserInstallation={profile_uri}")
 
         try:

@@ -378,27 +378,79 @@ class MainWindow:
                          daemon=True).start()
 
     def _generate_worker(self, client: Client, selected: list[str]):
-        templates_dir = Path(self.var_templates.get())
-        output_dir = Path(self.var_output.get())
-        output_dir.mkdir(parents=True, exist_ok=True)
+        from core.excel_reader import short_fio, sanitize_folder_name
+        from core.config import get_folder_pattern, get_client_pattern
+        from datetime import datetime
 
-        log = setup_logger(str(output_dir))
+        templates_dir = Path(self.var_templates.get())
+        output_root = Path(self.var_output.get())
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        # --- Логи в отдельной папке _logs с датой в имени ---
+        logs_dir = output_root / "_logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_name = f"generation_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+        log = setup_logger(str(logs_dir), filename=log_name)
+
+        # --- Формируем путь к папке клиента по шаблонам ---
+        # Разбираем дату DD.MM.YYYY → year, month
+        year, month = "", ""
+        if client.date and "." in client.date:
+            parts = client.date.split(".")
+            if len(parts) == 3:
+                _, month, year = parts
+
+        # Верхние папки: по умолчанию "{year}/{month}" → 2024/01
+        folder_pattern = get_folder_pattern()
+        top_dir_str = folder_pattern.format(
+            year=year,
+            month=month,
+            first_letter=(client.fio[:1].upper() if client.fio else "_"),
+        ).strip("/").replace("//", "/")
+
+        client_dir = output_root
+        if top_dir_str:
+            for part in top_dir_str.split("/"):
+                if part:
+                    client_dir = client_dir / sanitize_folder_name(part)
+        client_dir.mkdir(parents=True, exist_ok=True)
+
+        # Папка клиента: по умолчанию "{short_fio}_{date}_{contract}"
+        client_pattern = get_client_pattern()
+        client_folder = client_pattern.format(
+            short_fio=short_fio(client.fio),
+            date=client.date,
+            contract=client.contract_num,
+            id=client.id,
+            phone=client.phone,
+            fio=client.fio,
+        )
+        client_folder = sanitize_folder_name(client_folder) or f"client_{client.id}"
+        client_dir = client_dir / client_folder
+        client_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Логирование запуска ---
         log_run_header(
             log,
             Excel=self.var_excel.get(),
             Шаблоны=str(templates_dir),
-            Куда=str(output_dir),
+            Куда=str(client_dir),
             Форматы=", ".join(selected),
             Клиент=f"{client.id} — {client.fio}",
         )
 
-        # Сканируем шаблоны
+        # --- Сканируем шаблоны ---
         exts = (".docx", ".docm", ".dotx", ".dotm")
-        templates = [p for p in templates_dir.iterdir()
-                     if p.is_file() and p.suffix.lower() in exts]
+        templates = [
+            p for p in templates_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in exts
+        ]
         if not templates:
             log.error("Шаблоны не найдены в %s", templates_dir)
-            self.root.after(0, lambda: self._finish_generation(0, 0, "Шаблонов нет"))
+            self.root.after(
+                0,
+                lambda: self._finish_generation(0, 0, "Шаблонов нет"),
+            )
             return
 
         log.info("Найдено шаблонов: %d", len(templates))
@@ -411,9 +463,9 @@ class MainWindow:
         fail = 0
 
         for tpl in templates:
-            # 1) Генерируем DOCX для этого шаблона
-            docx_name = f"{tpl.stem}_{client.id}.docx"
-            docx_path = output_dir / docx_name
+            # Имя файла: <Шаблон>.docx (без _ID — папка уже содержит ID/дату)
+            docx_name = f"{tpl.stem}.docx"
+            docx_path = client_dir / docx_name
             try:
                 generate_docx(str(tpl), str(docx_path), client)
                 log.info("%s → %s — OK", tpl.name, docx_name)
@@ -424,17 +476,17 @@ class MainWindow:
                 self._update_progress(done, total)
                 continue
 
-            # 2) Прогоняем выбранные форматы
             for code in selected:
                 done += 1
                 fmt = FORMATS[code]
                 try:
                     if code == "docx":
-                        # DOCX уже создан выше — просто учитываем в статистике
+                        # DOCX уже создан выше — учитываем статистику
                         ok += 1
                     else:
                         out_path = convert_to_format(
-                            str(docx_path), str(output_dir), fmt)
+                            str(docx_path), str(client_dir), fmt,
+                        )
                         log.info("%s → %s — OK", tpl.name, Path(out_path).name)
                         ok += 1
                 except Exception as e:
