@@ -79,9 +79,12 @@ def build_marker_map(
     Значения берутся из client.raw[column] и форматируются по marker["format"].
 
     Если значение пустое:
-        - при on_empty_value == "keep_marker" — маркер НЕ попадает в карту,
-          и replace_in_text оставит его в документе как есть;
-        - при on_empty_value == "empty_string" — подставляется пустая строка.
+        - on_empty_value == "keep_marker" → маркер НЕ попадает в карту,
+          останется в документе как есть;
+        - on_empty_value == "placeholder" → подставляются прочерки
+          (количество = placeholder_underscores);
+        - on_empty_value == "empty_string" → подставляются пробелы
+          (количество = empty_string_spaces).
 
     Если markers не заданы — используется get_markers() из core.config.
     """
@@ -89,12 +92,17 @@ def build_marker_map(
         from .config import get_markers
         markers = get_markers()
 
-    # Читаем настройку поведения
+    # Читаем настройки поведения
     try:
         from .config import get_settings
-        on_empty = get_settings().get("on_empty_value", "empty_string")
+        settings = get_settings()
+        on_empty = settings.get("on_empty_value", "empty_string")
+        spaces_count = int(settings.get("empty_string_spaces", 5))
+        underscores_count = int(settings.get("placeholder_underscores", 10))
     except Exception:
         on_empty = "empty_string"
+        spaces_count = 5
+        underscores_count = 10
 
     result: Dict[str, str] = {}
     for m in markers:
@@ -112,11 +120,14 @@ def build_marker_map(
         raw_value = raw_value.strip() if isinstance(raw_value, str) else ""
 
         if not raw_value:
-            if on_empty == "keep_marker":
+            if on_empty in ("keep_marker", "keep"):
                 # Не добавляем маркер в карту — он останется в документе
                 continue
-            else:
-                result[marker_name] = ""
+            elif on_empty == "placeholder":
+                result[marker_name] = "_" * max(0, underscores_count)
+                continue
+            else:  # empty_string
+                result[marker_name] = " " * max(0, spaces_count)
                 continue
 
         result[marker_name] = format_value(raw_value, fmt)
@@ -190,8 +201,44 @@ def _replace_in_paragraph(paragraph: Paragraph, marker_map: Dict[str, str]) -> b
 
 def replace_markers(doc: DocumentType, client: Client,
                     markers: Optional[List[Dict[str, Any]]] = None) -> int:
-    """Заменяет маркеры в документе (параграфы, таблицы, колонтитулы)."""
+    """Заменяет маркеры в документе (параграфы, таблицы, колонтитулы).
+
+    Логика для НЕНАЙДЕННЫХ маркеров (есть в шаблоне, нет в конфиге)
+    определяется настройкой on_missing_marker:
+        - highlight_and_warn → оставить + подсветить + предупредить
+        - highlight          → оставить + подсветить
+        - keep               → оставить как есть
+        - placeholder        → поставить прочерк (placeholder_underscores)
+        - empty_string       → подставить пробелы (empty_string_spaces)
+        - hide               → удалить маркер полностью
+    """
+    # Читаем настройки
+    try:
+        from .config import get_settings
+        settings = get_settings()
+        on_missing = settings.get("on_missing_marker", "highlight_and_warn")
+        spaces_count = int(settings.get("empty_string_spaces", 5))
+        underscores_count = int(settings.get("placeholder_underscores", 10))
+    except Exception:
+        on_missing = "highlight_and_warn"
+        spaces_count = 5
+        underscores_count = 10
+
+    # 1. Карта для известных маркеров (из конфига)
     marker_map = build_marker_map(client, markers)
+
+    # 2. Для подстановочных режимов — добавляем в карту ненайденные маркеры
+    if on_missing in ("placeholder", "empty_string"):
+        all_in_template = _collect_all_markers(doc)
+        known_markers = set(marker_map.keys())
+        unknown_markers = all_in_template - known_markers
+
+        for name in unknown_markers:
+            if on_missing == "placeholder":
+                marker_map[name] = "_" * max(0, underscores_count)
+            elif on_missing == "empty_string":
+                marker_map[name] = " " * max(0, spaces_count)
+
     counter = 0
 
     for paragraph in _iter_paragraphs(doc):
@@ -204,7 +251,63 @@ def replace_markers(doc: DocumentType, client: Client,
                 if _replace_in_paragraph(paragraph, marker_map):
                     counter += 1
 
+    # 3. Если режим hide — удаляем оставшиеся ненайденные маркеры
+    if on_missing == "hide":
+        _remove_unreplaced_markers(doc)
+
     return counter
+
+
+def _collect_all_markers(doc: DocumentType) -> Set[str]:
+    """Собирает все имена маркеров {{...}} в документе (без замены)."""
+    found: Set[str] = set()
+
+    def scan_text(text: str) -> None:
+        for m in MARKER_RE.finditer(text):
+            found.add(m.group(1))
+
+    for p in _iter_paragraphs(doc):
+        scan_text(p.text)
+    for section in doc.sections:
+        for hf in (section.header, section.footer):
+            for p in _iter_paragraphs(hf):
+                scan_text(p.text)
+
+    return found
+
+
+def _remove_unreplaced_markers(doc: DocumentType) -> int:
+    """Удаляет незаменённые маркеры {{...}} из документа полностью.
+
+    Работает как с цельными, так и с разбитыми по runs маркерами.
+
+    :return: количество удалённых маркеров
+    """
+    removed = 0
+
+    def clean_paragraph(p: Paragraph) -> None:
+        nonlocal removed
+        if not MARKER_RE.search(p.text):
+            return
+
+        cleaned_text = MARKER_RE.sub("", p.text)
+        removed += len(MARKER_RE.findall(p.text))
+
+        if not p.runs:
+            return
+        first_run = p.runs[0]
+        first_run.text = cleaned_text
+        for run in list(p.runs[1:]):
+            run.text = ""
+
+    for p in _iter_paragraphs(doc):
+        clean_paragraph(p)
+    for section in doc.sections:
+        for hf in (section.header, section.footer):
+            for p in _iter_paragraphs(hf):
+                clean_paragraph(p)
+
+    return removed
 
 
 def list_markers_in_template(template_path: str) -> Set[str]:
@@ -255,14 +358,15 @@ def find_unreplaced_markers(doc: DocumentType) -> Set[str]:
 def highlight_unreplaced_markers(doc: DocumentType, color: str = "red") -> int:
     """Подсвечивает незаменённые маркеры {{...}} в документе.
 
-    Работает как с цельными, так и с разбитыми по runs маркерами.
-    Если параграф содержит {{...}} — подсвечиваются все runs,
-    в которых встречается часть маркера, или весь параграф целиком
-    (если маркер разбит).
+    Всегда подсвечивается ТОЛЬКО маркер, а не весь run или параграф.
+    Работает с любым случаем:
+        - один run с текстом + маркером,
+        - маркер, разбитый на несколько runs,
+        - несколько маркеров в одном параграфе.
 
     :param doc: документ после replace_markers
     :param color: 'red' (по умолчанию)
-    :return: количество подсвеченных параграфов
+    :return: количество подсвеченных маркеров
     """
     from docx.enum.text import WD_COLOR_INDEX
 
@@ -278,33 +382,74 @@ def highlight_unreplaced_markers(doc: DocumentType, color: str = "red") -> int:
 
     count = 0
 
-    def highlight_paragraph(p: Paragraph) -> None:
+    def process_paragraph(p: Paragraph) -> None:
         nonlocal count
+
         full_text = p.text
         if not MARKER_RE.search(full_text):
             return
 
-        # Параграф содержит {{...}}. Проверяем, цельный ли маркер в runs.
-        any_run_has_marker = any(MARKER_RE.search(r.text) for r in p.runs)
+        if not p.runs:
+            return
 
-        if any_run_has_marker:
-            # Цельные маркеры — подсвечиваем только нужные runs
-            for run in p.runs:
-                if MARKER_RE.search(run.text):
-                    run.font.highlight_color = hl_color
-            count += 1
-        else:
-            # Маркер разбит по runs — подсвечиваем весь параграф целиком
-            for run in p.runs:
+        # --- Шаг 1. Склеиваем все runs в один, чтобы иметь цельный текст ---
+        # Запоминаем формат первого run как базовый
+        first_run = p.runs[0]
+        # Сохраняем копии форматирования
+        font_name = first_run.font.name
+        font_size = first_run.font.size
+        font_bold = first_run.font.bold
+        font_italic = first_run.font.italic
+        font_underline = first_run.font.underline
+
+        # Удаляем все runs, кроме первого
+        for run in list(p.runs[1:]):
+            run._element.getparent().remove(run._element)
+
+        # Очищаем первый run
+        first_run.text = ""
+        first_run.font.highlight_color = None
+
+        # --- Шаг 2. Разбиваем full_text на части ---
+        parts = []
+        pos = 0
+        for m in MARKER_RE.finditer(full_text):
+            if m.start() > pos:
+                parts.append(("text", full_text[pos:m.start()]))
+            parts.append(("marker", m.group(0)))
+            pos = m.end()
+        if pos < len(full_text):
+            parts.append(("text", full_text[pos:]))
+
+        # --- Шаг 3. Пересоздаём runs ---
+        # Первый run используем как «базовый» — если первой части нет
+        # (текст начинается сразу с маркера), оставим его пустым
+        first_used = False
+        for kind, text in parts:
+            if not first_used:
+                run = first_run
+                run.text = text
+                first_used = True
+            else:
+                run = p.add_run(text)
+
+            # Восстанавливаем форматирование
+            run.font.name = font_name
+            run.font.size = font_size
+            run.font.bold = font_bold
+            run.font.italic = font_italic
+            run.font.underline = font_underline
+
+            if kind == "marker":
                 run.font.highlight_color = hl_color
-            count += 1
+                count += 1
 
     for p in _iter_paragraphs(doc):
-        highlight_paragraph(p)
+        process_paragraph(p)
     for section in doc.sections:
         for hf in (section.header, section.footer):
             for p in _iter_paragraphs(hf):
-                highlight_paragraph(p)
+                process_paragraph(p)
 
     return count
 

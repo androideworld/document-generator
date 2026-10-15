@@ -75,6 +75,8 @@ class MainWindow:
         self.var_on_missing_marker = StringVar()
         self.var_on_missing_column = StringVar()
         self.var_on_empty_value = StringVar()
+        self.var_empty_string_spaces = StringVar(value="5")
+        self.var_placeholder_underscores = StringVar(value="10")
         self.var_log_mode = StringVar()
 
         self._build_ui()
@@ -512,44 +514,121 @@ class MainWindow:
 
         f_folder.columnconfigure(1, weight=1)
 
-        # === Поведение ===
-        f_behavior = ttk.LabelFrame(parent, text="Поведение при проблемах")
-        f_behavior.pack(fill="x", **pad)
+        # === Поведение при проблемах — три отдельные группы ===
 
-        ttk.Label(f_behavior, text="Ненайденный маркер:").grid(
-            row=0, column=0, sticky="w", padx=6, pady=2)
-        rb1 = ttk.Radiobutton(f_behavior, text="Подсветить красным + предупредить",
-                              variable=self.var_on_missing_marker,
-                              value="highlight_and_warn")
-        rb1.grid(row=0, column=1, sticky="w", padx=6, pady=2)
-        rb2 = ttk.Radiobutton(f_behavior, text="Подсветить красным",
-                              variable=self.var_on_missing_marker,
-                              value="highlight")
-        rb2.grid(row=1, column=1, sticky="w", padx=6)
-        rb3 = ttk.Radiobutton(f_behavior, text="Оставить маркер как есть",
-                              variable=self.var_on_missing_marker,
-                              value="keep")
-        rb3.grid(row=2, column=1, sticky="w", padx=6)
+        # 1. Ненайденный маркер
+        f_missing_marker = ttk.LabelFrame(
+            parent, text="⚠ Ненайденный маркер (нет в конфиге)"
+        )
+        f_missing_marker.pack(fill="x", **pad)
 
-        ttk.Label(f_behavior, text="Ненайденная колонка:").grid(
-            row=3, column=0, sticky="w", padx=6, pady=(12, 2))
-        ttk.Radiobutton(f_behavior, text="Предупредить в UI",
-                        variable=self.var_on_missing_column,
-                        value="warn").grid(row=3, column=1, sticky="w", padx=6)
-        ttk.Radiobutton(f_behavior, text="Молча пропустить",
-                        variable=self.var_on_missing_column,
-                        value="silent").grid(row=4, column=1, sticky="w", padx=6)
+        ttk.Radiobutton(
+            f_missing_marker, text="Подсветить красным + предупредить",
+            variable=self.var_on_missing_marker,
+            value="highlight_and_warn",
+        ).pack(anchor="w", padx=12, pady=2)
 
-        ttk.Label(f_behavior, text="Пустое поле в Excel:").grid(
-            row=5, column=0, sticky="w", padx=6, pady=(12, 2))
-        ttk.Radiobutton(f_behavior, text="Подставить пустую строку",
-                        variable=self.var_on_empty_value,
-                        value="empty_string").grid(
-            row=5, column=1, sticky="w", padx=6)
-        ttk.Radiobutton(f_behavior, text="Оставить маркер",
-                        variable=self.var_on_empty_value,
-                        value="keep_marker").grid(
-            row=6, column=1, sticky="w", padx=6)
+        ttk.Radiobutton(
+            f_missing_marker, text="Подсветить красным",
+            variable=self.var_on_missing_marker,
+            value="highlight",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        ttk.Radiobutton(
+            f_missing_marker, text="Оставить маркер как есть",
+            variable=self.var_on_missing_marker,
+            value="keep",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        # Прочерк + поле количества
+        f_mm_ph = ttk.Frame(f_missing_marker)
+        f_mm_ph.pack(anchor="w", fill="x", padx=12, pady=2)
+        ttk.Radiobutton(
+            f_mm_ph, text="Поставить прочерк для заполнения",
+            variable=self.var_on_missing_marker,
+            value="placeholder",
+        ).pack(side="left")
+        ttk.Label(f_mm_ph, text="Количество:").pack(side="left", padx=(12, 4))
+        ttk.Entry(
+            f_mm_ph, textvariable=self.var_placeholder_underscores, width=5,
+        ).pack(side="left")
+
+        # Пробелы + поле количества
+        f_mm_sp = ttk.Frame(f_missing_marker)
+        f_mm_sp.pack(anchor="w", fill="x", padx=12, pady=2)
+        ttk.Radiobutton(
+            f_mm_sp, text="Подставить пробелы (пустое место)",
+            variable=self.var_on_missing_marker,
+            value="empty_string",
+        ).pack(side="left")
+        ttk.Label(f_mm_sp, text="Количество:").pack(side="left", padx=(12, 4))
+        ttk.Entry(
+            f_mm_sp, textvariable=self.var_empty_string_spaces, width=5,
+        ).pack(side="left")
+
+        # Скрыть маркер
+        ttk.Radiobutton(
+            f_missing_marker, text="Скрыть маркер (удалить из документа)",
+            variable=self.var_on_missing_marker,
+            value="hide",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        # 2. Ненайденная колонка
+        f_missing_column = ttk.LabelFrame(parent, text="⚠ Ненайденная колонка (нет в Excel)")
+        f_missing_column.pack(fill="x", **pad)
+
+        ttk.Radiobutton(
+            f_missing_column, text="Предупредить в UI",
+            variable=self.var_on_missing_column,
+            value="warn",
+        ).pack(anchor="w", padx=12, pady=2)
+        ttk.Radiobutton(
+            f_missing_column, text="Молча пропустить",
+            variable=self.var_on_missing_column,
+            value="silent",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        # 3. Пустое поле в Excel
+        f_empty = ttk.LabelFrame(parent, text="⚠ Пустое поле в Excel")
+        f_empty.pack(fill="x", **pad)
+
+        ttk.Radiobutton(
+            f_empty, text="Оставить маркер + подсветить красным",
+            variable=self.var_on_empty_value,
+            value="keep_marker",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        ttk.Radiobutton(
+            f_empty, text="Оставить как есть",
+            variable=self.var_on_empty_value,
+            value="keep",
+        ).pack(anchor="w", padx=12, pady=2)
+
+        # Прочерк + поле для количества
+        f_ph_row = ttk.Frame(f_empty)
+        f_ph_row.pack(anchor="w", fill="x", padx=12, pady=2)
+        ttk.Radiobutton(
+            f_ph_row, text="Поставить прочерк для заполнения",
+            variable=self.var_on_empty_value,
+            value="placeholder",
+        ).pack(side="left")
+        ttk.Label(f_ph_row, text="Количество:").pack(side="left", padx=(12, 4))
+        ttk.Entry(
+            f_ph_row, textvariable=self.var_placeholder_underscores, width=5,
+        ).pack(side="left")
+
+        # Пробелы + поле для количества
+        f_sp_row = ttk.Frame(f_empty)
+        f_sp_row.pack(anchor="w", fill="x", padx=12, pady=2)
+        ttk.Radiobutton(
+            f_sp_row, text="Подставить пробелы (пустое место)",
+            variable=self.var_on_empty_value,
+            value="empty_string",
+        ).pack(side="left")
+        ttk.Label(f_sp_row, text="Количество:").pack(side="left", padx=(12, 4))
+        ttk.Entry(
+            f_sp_row, textvariable=self.var_empty_string_spaces, width=5,
+        ).pack(side="left")
 
         # === Логи ===
         f_log = ttk.LabelFrame(parent, text="Логи")
@@ -573,12 +652,29 @@ class MainWindow:
                    command=self._on_open_install_dir).pack(side="right")
 
     def _on_settings_save(self):
+        # Парсим числовые поля — если мусор, используем дефолты
+        try:
+            spaces = int(self.var_empty_string_spaces.get().strip() or "5")
+            if spaces < 0:
+                spaces = 0
+        except ValueError:
+            spaces = 5
+
+        try:
+            underscores = int(self.var_placeholder_underscores.get().strip() or "10")
+            if underscores < 0:
+                underscores = 0
+        except ValueError:
+            underscores = 10
+
         cfg.save_settings({
             "folder_pattern": self.var_folder_pattern.get().strip() or "{year}/{month}",
             "client_pattern": self.var_client_pattern.get().strip() or "{short_fio}_{date}_{contract}",
             "on_missing_marker": self.var_on_missing_marker.get(),
             "on_missing_column": self.var_on_missing_column.get(),
             "on_empty_value": self.var_on_empty_value.get(),
+            "empty_string_spaces": spaces,
+            "placeholder_underscores": underscores,
             "log_mode": self.var_log_mode.get(),
         })
         messagebox.showinfo("Сохранено", "Настройки сохранены.")
@@ -640,6 +736,8 @@ class MainWindow:
         self.var_on_missing_marker.set(s.get("on_missing_marker", "highlight_and_warn"))
         self.var_on_missing_column.set(s.get("on_missing_column", "warn"))
         self.var_on_empty_value.set(s.get("on_empty_value", "empty_string"))
+        self.var_empty_string_spaces.set(str(s.get("empty_string_spaces", 5)))
+        self.var_placeholder_underscores.set(str(s.get("placeholder_underscores", 10)))
         self.var_log_mode.set(s.get("log_mode", "per_run"))
 
     def _save_paths_to_config(self):

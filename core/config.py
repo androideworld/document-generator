@@ -37,7 +37,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "client_pattern": "{short_fio}_{date}_{contract}",
     "on_missing_marker": "highlight_and_warn",   # highlight_and_warn | highlight | keep
     "on_missing_column": "warn",                 # warn | silent
-    "on_empty_value": "empty_string",            # empty_string | keep_marker
+    "on_empty_value": "empty_string",            # empty_string | keep_marker | placeholder
+    "empty_string_spaces": 5,                    # количество пробелов для empty_string
+    "placeholder_underscores": 10,               # количество прочерков для placeholder
     "log_mode": "per_run",                       # per_run | single_file
     "ui_theme": "default",
 }
