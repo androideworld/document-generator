@@ -33,13 +33,15 @@ DEFAULT_MARKERS: List[Dict[str, Any]] = [
 ]
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
+    "app_version": "1.0.0",       # ← НОВОЕ
     "folder_pattern": "{year}/{month}",
     "client_pattern": "{short_fio}_{date}_{contract}",
+    "file_pattern": "{template}_{short_fio}_{date}_{contract}",
     "on_missing_marker": "highlight_and_warn",   # highlight_and_warn | highlight | keep
     "on_missing_column": "warn",                 # warn | silent
     "on_empty_value": "empty_string",            # empty_string | keep_marker | placeholder
     "empty_string_spaces": 5,                    # количество пробелов для empty_string
-    "placeholder_underscores": 10,               # количество прочерков для placeholder
+    "placeholder_underscores": 20,               # количество прочерков для placeholder
     "log_mode": "per_run",                       # per_run | single_file
     "ui_theme": "default",
 }
@@ -233,7 +235,12 @@ def ensure_portable_structure() -> Dict[str, str]:
     # 3. Пример шаблона (если нет)
     tpl = install / paths["templates"] / "Пример_Договор.docx"
     if not tpl.exists():
-        _create_example_template(tpl)
+        try:
+            _create_example_template(tpl)
+        except Exception as e:
+            # Не валим стартап, если пример не создался
+            print(f"[STARTUP] Не удалось создать пример шаблона: {e}",
+                  file=sys.stderr)
 
     # 4. config.json (если нет или он пустой/без relative_paths)
     portable = get_portable_config_path()
@@ -393,6 +400,39 @@ def _create_example_template(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(path)
 
+# ---------------------------------------------------------------------------
+# Функции-обёртки для шаблонов путей
+# ---------------------------------------------------------------------------
+
+def get_folder_pattern() -> str:
+    """Шаблон верхних папок.
+
+    По умолчанию: {year}/{month} → 2024/01
+
+    Доступные подстановки: {year}, {month}, {first_letter}
+    """
+    return get_settings().get("folder_pattern", "{year}/{month}")
+
+
+def get_client_pattern() -> str:
+    """Шаблон папки клиента.
+
+    По умолчанию: {short_fio}_{date}_{contract} → Иванов И.И._01.01.2024_Д-001
+
+    Доступные подстановки: {short_fio}, {fio}, {date}, {contract}, {id}, {phone}
+    """
+    return get_settings().get("client_pattern", "{short_fio}_{date}_{contract}")
+
+
+def get_file_pattern() -> str:
+    """Шаблон имени файла.
+
+    По умолчанию: {template}_{short_fio}_{date}_{contract}
+    Пример: Договор_Иванов И.И._01.01.2024_Д-001
+
+    Доступные подстановки: {template}, {short_fio}, {fio}, {date}, {contract}, {id}, {phone}
+    """
+    return get_settings().get("file_pattern", "{template}_{short_fio}_{date}_{contract}")
 
 # ---------------------------------------------------------------------------
 # Демонстрация (для проверки)

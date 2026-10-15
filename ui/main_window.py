@@ -18,6 +18,7 @@ from tkinter import (
 )
 
 from core import config as cfg
+from core.version import APP_TITLE, VERSION
 from core.excel_reader import (
     read_clients, filter_clients, short_fio, sanitize_folder_name,
     get_excel_columns, Client,
@@ -41,7 +42,7 @@ class MainWindow:
 
     def __init__(self):
         self.root = Tk()
-        self.root.title(WINDOW_TITLE)
+        self.root.title(f"{APP_TITLE} v{VERSION}")
         self.root.geometry(f"{WINDOW_W}x{WINDOW_H}")
         self.root.minsize(720, 700)
 
@@ -72,6 +73,7 @@ class MainWindow:
         # --- Переменные вкладки «Настройки» ---
         self.var_folder_pattern = StringVar()
         self.var_client_pattern = StringVar()
+        self.var_file_pattern = StringVar()
         self.var_on_missing_marker = StringVar()
         self.var_on_missing_column = StringVar()
         self.var_on_empty_value = StringVar()
@@ -512,6 +514,15 @@ class MainWindow:
                   font=("", 8, "italic")).grid(
             row=3, column=1, sticky="w", padx=6)
 
+        ttk.Label(f_folder, text="Шаблон имени файла:").grid(
+            row=4, column=0, sticky="w", padx=6, pady=3)
+        ttk.Entry(f_folder, textvariable=self.var_file_pattern, width=40).grid(
+            row=4, column=1, sticky="we", padx=6, pady=3)
+        ttk.Label(f_folder,
+                  text="Доступно: {template} {short_fio} {fio} {date} {contract} {id} {phone}",
+                  font=("", 8, "italic")).grid(
+            row=5, column=1, sticky="w", padx=6)
+
         f_folder.columnconfigure(1, weight=1)
 
         # === Поведение при проблемах — три отдельные группы ===
@@ -670,6 +681,7 @@ class MainWindow:
         cfg.save_settings({
             "folder_pattern": self.var_folder_pattern.get().strip() or "{year}/{month}",
             "client_pattern": self.var_client_pattern.get().strip() or "{short_fio}_{date}_{contract}",
+            "file_pattern": self.var_file_pattern.get().strip() or "{template}_{short_fio}_{date}_{contract}",
             "on_missing_marker": self.var_on_missing_marker.get(),
             "on_missing_column": self.var_on_missing_column.get(),
             "on_empty_value": self.var_on_empty_value.get(),
@@ -733,6 +745,7 @@ class MainWindow:
         s = cfg.get_settings()
         self.var_folder_pattern.set(s.get("folder_pattern", "{year}/{month}"))
         self.var_client_pattern.set(s.get("client_pattern", "{short_fio}_{date}_{contract}"))
+        self.var_file_pattern.set(s.get("file_pattern", "{template}_{short_fio}_{date}_{contract}"))
         self.var_on_missing_marker.set(s.get("on_missing_marker", "highlight_and_warn"))
         self.var_on_missing_column.set(s.get("on_missing_column", "warn"))
         self.var_on_empty_value.set(s.get("on_empty_value", "empty_string"))
@@ -988,7 +1001,21 @@ class MainWindow:
         unreplaced_all: list[str] = []
 
         for tpl in templates:
-            docx_name = f"{tpl.stem}.docx"
+            from core.config import get_file_pattern
+            file_pattern = get_file_pattern()
+            docx_name_base = file_pattern.format(
+                template=tpl.stem,
+                short_fio=short_fio(client.fio),
+                fio=client.fio,
+                date=client.date,
+                contract=client.contract_num,
+                id=client.id,
+                phone=client.phone,
+            )
+            docx_name_base = sanitize_folder_name(docx_name_base)
+            if not docx_name_base:
+                docx_name_base = tpl.stem
+            docx_name = f"{docx_name_base}.docx"
             docx_path = client_dir / docx_name
             try:
                 unreplaced = generate_docx(

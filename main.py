@@ -40,6 +40,9 @@ def _setup_portable_structure():
 def main():
     _setup_portable_structure()
 
+    from core.version import APP_NAME, VERSION
+    print(f"{APP_NAME} v{VERSION}")
+
     from ui.main_window import MainWindow
     app = MainWindow()
     app.run()
