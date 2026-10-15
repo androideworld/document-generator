@@ -1,25 +1,52 @@
-"""Чтение клиентов из clients.xlsx через openpyxl."""
+"""Чтение клиентов из clients.xlsx через openpyxl.
+
+Чтение ведётся по имени колонки из шапки (первая строка).
+Это позволяет:
+    - менять порядок колонок,
+    - добавлять свои колонки,
+    - использовать любые имена в шапке.
+"""
 
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, date
-from typing import List
+from typing import List, Dict
 import openpyxl
 
 
 @dataclass
 class Client:
-    id: str
-    fio: str
-    sum: str
-    date: str
-    contract_num: str
-    address: str
-    phone: str
+    """Клиент. Основные поля заполняются из «известных» колонок,
+    raw — словарь со всеми колонками (по имени из шапки)."""
+    id: str = ""
+    fio: str = ""
+    sum: str = ""
+    date: str = ""
+    contract_num: str = ""
+    address: str = ""
+    phone: str = ""
+    raw: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
 
+
+# Соответствие «известное поле Client → имя колонки по умолчанию».
+# Используется, если в шапке есть эти колонки.
+DEFAULT_COLUMNS = {
+    "id": "ID",
+    "fio": "ФИО",
+    "sum": "Сумма",
+    "date": "Дата",
+    "contract_num": "НомерДоговора",
+    "address": "Адрес",
+    "phone": "Телефон",
+}
+
+
+# ---------------------------------------------------------------------------
+# Нормализация значений
+# ---------------------------------------------------------------------------
 
 def _normalize_id(value) -> str:
     if value is None:
@@ -49,38 +76,87 @@ def _normalize_date(value) -> str:
     return text
 
 
-def _cell(row: tuple, index: int) -> str:
+def _cell(row: tuple, index: int):
+    if index is None or index < 0:
+        return None
     if index < len(row):
         return row[index]
-    return ""
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Чтение
+# ---------------------------------------------------------------------------
+
+def get_excel_columns(path: str) -> List[str]:
+    """Возвращает список имён колонок из шапки (первая строка)."""
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    ws = wb.active
+    first_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), tuple())
+    wb.close()
+
+    columns: List[str] = []
+    for v in first_row:
+        columns.append(_normalize_text(v))
+    return columns
 
 
 def read_clients(path: str) -> List[Client]:
+    """Читает клиентов из Excel.
+
+    - Шапка — первая строка.
+    - Значения читаются по имени колонки.
+    - Строки с пустым ID пропускаются.
+    - Все колонки попадают в client.raw.
+    """
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     ws = wb.active
 
+    rows_iter = ws.iter_rows(values_only=True)
+    header = next(rows_iter, None)
+    if header is None:
+        wb.close()
+        return []
+
+    # Карта {имя_колонки: индекс}
+    header_names = [_normalize_text(v) for v in header]
+    col_index = {name: i for i, name in enumerate(header_names) if name}
+
     clients: List[Client] = []
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in rows_iter:
         if row is None:
             continue
 
-        client_id = _normalize_id(_cell(row, 0))
-        if not client_id:
-            continue
+        # Собираем raw: {имя: значение}
+        raw: Dict[str, str] = {}
+        for name, idx in col_index.items():
+            raw[name] = _normalize_text(_cell(row, idx))
 
-        clients.append(Client(
-            id=client_id,
-            fio=_normalize_text(_cell(row, 1)),
-            sum=_normalize_text(_cell(row, 2)),
-            date=_normalize_date(_cell(row, 3)),
-            contract_num=_normalize_text(_cell(row, 4)),
-            address=_normalize_text(_cell(row, 5)),
-            phone=_normalize_text(_cell(row, 6)),
-        ))
+        # Известные поля — по именам колонок
+        id_val = _normalize_id(raw.get(DEFAULT_COLUMNS["id"], ""))
+        if not id_val:
+            continue  # пустой ID — пропускаем
+
+        client = Client(
+            id=id_val,
+            fio=raw.get(DEFAULT_COLUMNS["fio"], ""),
+            sum=_normalize_text(raw.get(DEFAULT_COLUMNS["sum"], "")),
+            date=_normalize_date(raw.get(DEFAULT_COLUMNS["date"], "")),
+            contract_num=raw.get(DEFAULT_COLUMNS["contract_num"], ""),
+            address=raw.get(DEFAULT_COLUMNS["address"], ""),
+            phone=raw.get(DEFAULT_COLUMNS["phone"], ""),
+            raw=raw,
+        )
+        clients.append(client)
 
     wb.close()
     return clients
+
+
+# ---------------------------------------------------------------------------
+# Фильтрация
+# ---------------------------------------------------------------------------
 
 def filter_clients(
     clients: List[Client],
@@ -89,20 +165,12 @@ def filter_clients(
     contract: str = "",
     phone: str = "",
 ) -> List[Client]:
-    """
-    Фильтрует клиентов по 4 полям без учёта регистра.
-    Пустые поля фильтра игнорируются.
-    Совпадение — подстрока (contains), а не точное равенство.
-    """
-    # Нормализуем фильтры: убираем пробелы и приводим к нижнему регистру
+    """Фильтрует клиентов по 4 полям без учёта регистра."""
     q_fio = fio.strip().lower()
     q_id = id.strip().lower()
     q_contract = contract.strip().lower()
     q_phone = phone.strip().lower()
 
-    # Нормализуем телефон для сравнения:
-    # оставляем только цифры — чтобы "+7 900 123-45-67" и "79001234567"
-    # совпадали
     def phone_digits(value: str) -> str:
         return "".join(ch for ch in value if ch.isdigit())
 
@@ -110,27 +178,22 @@ def filter_clients(
 
     result: List[Client] = []
     for c in clients:
-        # ФИО — подстрока без учёта регистра
         if q_fio and q_fio not in c.fio.lower():
             continue
-
-        # ID — подстрока без учёта регистра (работает и для чисел, и для строк)
         if q_id and q_id not in c.id.lower():
             continue
-
-        # Номер договора — подстрока без учёта регистра
         if q_contract and q_contract not in c.contract_num.lower():
             continue
-
-        # Телефон — сравнение по цифрам (без +, пробелов, дефисов)
-        if q_phone_digits:
-            if q_phone_digits not in phone_digits(c.phone):
-                continue
-
+        if q_phone_digits and q_phone_digits not in phone_digits(c.phone):
+            continue
         result.append(c)
 
     return result
 
+
+# ---------------------------------------------------------------------------
+# Утилиты для структуры папок
+# ---------------------------------------------------------------------------
 
 def short_fio(fio: str) -> str:
     """Иванов Иван Иванович → Иванов И.И."""
@@ -152,45 +215,21 @@ def sanitize_folder_name(name: str) -> str:
     return cleaned or "client"
 
 
+# ---------------------------------------------------------------------------
+# CLI для проверки
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import sys
 
-    excel_path = sys.argv[1] if len(sys.argv) > 1 else "clients.xlsx"
+    path = sys.argv[1] if len(sys.argv) > 1 else "clients.xlsx"
 
-    try:
-        clients = read_clients(excel_path)
-    except FileNotFoundError:
-        print(f"[ОШИБКА] Файл не найден: {excel_path}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"[ОШИБКА] Не удалось прочитать файл: {e}")
-        sys.exit(1)
+    print(f"Файл: {path}")
+    print(f"Колонки: {get_excel_columns(path)}")
+    print()
 
+    clients = read_clients(path)
     print(f"Прочитано клиентов: {len(clients)}")
-    print("=" * 70)
-
     for i, c in enumerate(clients, 1):
-        print(f"{i:>3}. ID={c.id} | {c.fio} | дог. {c.contract_num} | {c.phone}")
-        print(f"     сумма={c.sum} | дата={c.date} | адрес={c.address}")
-
-    # --- Демонстрация фильтрации ---
-    print("\n" + "=" * 70)
-    print("Демонстрация фильтрации:")
-    print("=" * 70)
-
-    cases = [
-        ("ФИО: 'иван' (регистр не важен)", dict(fio="иван")),
-        ("ФИО: 'ПЕТРОВ' (верхний регистр)", dict(fio="ПЕТРОВ")),
-        ("ID: '1' (подстрока — совпадёт с 1 и ... не с 2)", dict(id="1")),
-        ("Договор: 'д-00'", dict(contract="д-00")),
-        ("Телефон: '900123' (формат с + и дефисами)", dict(phone="900123")),
-        ("Телефон: '+7 900 765' (с пробелами)", dict(phone="+7 900 765")),
-        ("ФИО + Договор: 'иван' + '001'", dict(fio="иван", contract="001")),
-        ("Ничего не найдено", dict(fio="КтотоНесуществующий")),
-    ]
-
-    for label, kwargs in cases:
-        found = filter_clients(clients, **kwargs)
-        print(f"\n[{label}] → найдено: {len(found)}")
-        for c in found:
-            print(f"    ID={c.id} | {c.fio} | дог. {c.contract_num} | {c.phone}")
+        print(f"{i}. ID={c.id} | {c.fio} | дог. {c.contract_num} | {c.phone}")
+        print(f"   raw = {c.raw}")
