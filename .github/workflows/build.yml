@@ -18,11 +18,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: ГенераторДокументов-linux
-            binary_path: dist/ГенераторДокументов
+            artifact_name: DocForge-linux
+            binary_path: dist/DocForge
           - os: windows-latest
-            artifact_name: ГенераторДокументов-windows
-            binary_path: dist/ГенераторДокументов.exe
+            artifact_name: DocForge-windows
+            binary_path: dist/DocForge.exe
 
     steps:
       - name: Checkout repository
